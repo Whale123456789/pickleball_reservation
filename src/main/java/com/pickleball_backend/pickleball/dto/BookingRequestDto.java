@@ -7,4 +7,5 @@ public class BookingRequestDto {
     private Integer slotId;
     private String purpose;
     private Integer numberOfPlayers;
+    private Integer durationHours;
 }

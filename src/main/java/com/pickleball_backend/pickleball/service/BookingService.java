@@ -16,6 +16,7 @@ import java.time.Duration;
 import java.time.LocalDate;
 import java.time.LocalDateTime;
 import java.time.LocalTime;
+import java.time.format.DateTimeParseException;
 import java.util.List;
 import java.util.Objects;
 import java.util.Optional;
@@ -56,28 +57,37 @@ public class BookingService {
         Slot slot = slotRepository.findById(request.getSlotId())
                 .orElseThrow(() -> new ResourceNotFoundException("Slot not found"));
 
-        // 4. Check slot availability
+        // 4. Validate slot duration matches request
+        if (slot.getDurationHours() != request.getDurationHours()) {
+            throw new ValidationException("Selected slot duration does not match request");
+        }
+
+        // 5. Check slot availability
         if (!slot.isAvailable() || isSlotBooked(slot.getId())) {
             throw new IllegalStateException("Slot is not available");
         }
 
-        // 5. Get court and calculate price
+        // 6. Get court and calculate price
         Court court = courtRepository.findById(slot.getCourtId())
                 .orElseThrow(() -> new ResourceNotFoundException("Court not found"));
 
-        double amount = calculateBookingAmount(court, slot);
+        double amount = calculateBookingAmount(court, slot, request.getDurationHours());
 
-        // 6. Create payment
+        // 7. Create payment
         Payment payment = new Payment();
         payment.setAmount(amount);
         payment.setPaymentDate(LocalDate.now());
         payment = paymentRepository.save(payment);
 
-        // 7. Create booking
+        // 8. Create booking
         Booking booking = new Booking();
         booking.setBookingDate(LocalDate.now());
         booking.setTotalAmount(amount);
-        booking.setStatus("CONFIRMED");
+        String bookingStatus = "CONFIRMED";
+        if (bookingStatus.length() > 50) {
+            bookingStatus = bookingStatus.substring(0, 50);
+        }
+        booking.setStatus(bookingStatus);
         booking.setMember(member);
         booking.setSlot(slot);
         booking.setPayment(payment);
@@ -85,41 +95,50 @@ public class BookingService {
         booking.setNumberOfPlayers(request.getNumberOfPlayers());
         booking = bookingRepository.save(booking);  // Save to generate ID
 
-        // 8. Create BookingSlot record - FIXED
+        // 9. Create BookingSlot record
         BookingSlot bookingSlot = new BookingSlot();
         bookingSlot.setBooking(booking);
         bookingSlot.setSlot(slot);
-        bookingSlot.setStatus("BOOKED");
+        String statusValue = "BOOKED";
+        if (statusValue.length() > 50) {
+            statusValue = statusValue.substring(0, 50);
+        }
+        bookingSlot.setStatus(statusValue);
+
         bookingSlotRepository.save(bookingSlot);
 
-        // 9. Update slot availability - FIXED
+        // 10. Update slot availability
         slot.setAvailable(false);
         slotRepository.save(slot);
 
-        // 10. Generate receipt
+        // 11. Generate receipt
         emailService.sendBookingConfirmation(account.getUser().getEmail(), booking, court, slot);
 
-        return mapToBookingResponse(booking, court, slot);
+        // 12. Create response with duration
+        BookingResponseDto response = mapToBookingResponse(booking, court, slot);
+        response.setDurationHours(request.getDurationHours());
+        return response;
     }
 
     private boolean isSlotBooked(Integer slotId) {
         if (slotId == null) return false;
-
-        // Corrected: Use proper JPQL query
         return bookingSlotRepository.existsBySlotIdAndStatus(slotId, "BOOKED");
     }
 
-    private double calculateBookingAmount(Court court, Slot slot) {
+    private double calculateBookingAmount(Court court, Slot slot, int durationHours) {
         LocalTime startTime = slot.getStartTime();
         LocalTime endTime = slot.getEndTime();
 
-        // Handle null pricing - FIXED
-        double peakHourlyPrice = court.getPeakHourlyPrice() != null ? court.getPeakHourlyPrice() : 0.0;
-        double offPeakHourlyPrice = court.getOffPeakHourlyPrice() != null ? court.getOffPeakHourlyPrice() : 0.0;
+        // Handle null pricing safely
+        double peakHourlyPrice = court.getPeakHourlyPrice() != null ?
+                court.getPeakHourlyPrice() : 0.0;
+        double offPeakHourlyPrice = court.getOffPeakHourlyPrice() != null ?
+                court.getOffPeakHourlyPrice() : 0.0;
 
-        double durationHours = getDurationHours(startTime, endTime);
+        // Default to off-peak rate
+        double hourlyRate = offPeakHourlyPrice;
 
-        // Check peak times only if defined
+        // Only check peak times if defined
         if (court.getPeakStartTime() != null && court.getPeakEndTime() != null) {
             try {
                 LocalTime peakStart = LocalTime.parse(court.getPeakStartTime());
@@ -127,20 +146,16 @@ public class BookingService {
 
                 // Check if slot falls entirely within peak hours
                 if (!startTime.isBefore(peakStart) && !endTime.isAfter(peakEnd)) {
-                    return peakHourlyPrice * durationHours;
+                    hourlyRate = peakHourlyPrice;
                 }
-            } catch (Exception e) {
-                // Log error but continue
-                log.error("Error parsing peak times: {}", e.getMessage());
+            } catch (DateTimeParseException e) {
+                log.error("Invalid peak time format: {}", e.getMessage());
+                // Maintain off-peak rate if parsing fails
             }
         }
 
-        // Default to off-peak pricing
-        return offPeakHourlyPrice * durationHours;
-    }
-
-    private double getDurationHours(LocalTime start, LocalTime end) {
-        return Duration.between(start, end).toMinutes() / 60.0;
+        // CORRECTED: Use validated durationHours parameter
+        return hourlyRate * durationHours;
     }
 
     private BookingResponseDto mapToBookingResponse(Booking booking, Court court, Slot slot) {
@@ -155,8 +170,11 @@ public class BookingService {
         response.setBookingStatus(booking.getStatus());
         response.setPurpose(booking.getPurpose());
         response.setNumberOfPlayers(booking.getNumberOfPlayers());
+        response.setCourtNumber(slot.getCourtNumber());
         return response;
     }
+
+
 
     @Transactional
     public CancellationResponse cancelBooking(Integer bookingId, String username) {
@@ -183,17 +201,27 @@ public class BookingService {
         }
 
         // 6. Update booking status (DO NOT free slot yet - wait for admin approval)
-        booking.setStatus("CANCELLATION_REQUESTED");
+        String newStatus = "CANCELLATION_REQUESTED";
+        if (newStatus.length() > 50) {
+            newStatus = newStatus.substring(0, 50);
+        }
+        booking.setStatus(newStatus);
         bookingRepository.save(booking);
 
         // 7. Create cancellation request
         CancellationRequest request = new CancellationRequest();
         request.setBooking(booking);
         request.setRequestDate(LocalDate.now());
-        request.setStatus("PENDING");
-        request.setReason("User requested cancellation"); // Add a default reason
-        request.setApprovedBy(null); // Will be set when admin approves
+        String requestStatus = "PENDING";
+        if (requestStatus.length() > 50) {
+            requestStatus = requestStatus.substring(0, 50);
+        }
+        request.setStatus(requestStatus);
+
+        request.setReason("User requested cancellation");
+        request.setApprovedBy(null);
         cancellationRequestRepository.save(request);
+
 
         // 8. Get court for email
         Court courtObj = courtRepository.findById(slot.getCourtId())
@@ -286,11 +314,19 @@ public class BookingService {
             slotRepository.save(slot);
 
             // 2. Update booking status
-            booking.setStatus("CANCELLED");
+            String bookingStatus = "CANCELLED";
+            if (bookingStatus.length() > 50) {
+                bookingStatus = bookingStatus.substring(0, 50);
+            }
+            booking.setStatus(bookingStatus);
             bookingRepository.save(booking);
 
             // 3. Update booking slot status
-            bookingSlot.setStatus("CANCELLED");
+            String slotStatus = "CANCELLED";
+            if (slotStatus.length() > 50) {
+                slotStatus = slotStatus.substring(0, 50);
+            }
+            bookingSlot.setStatus(slotStatus);
             bookingSlotRepository.save(bookingSlot);
 
             // 4. Update request
@@ -303,12 +339,19 @@ public class BookingService {
             request.setApprovedBy(adminUser.getId());
         } else {
             // Reject request - revert changes
-            booking.setStatus("CONFIRMED");
+            String bookingStatus = "CONFIRMED";
+            if (bookingStatus.length() > 50) {
+                bookingStatus = bookingStatus.substring(0, 50);
+            }
+            booking.setStatus(bookingStatus);
             bookingRepository.save(booking);
 
             // Keep booking slot as booked
-            bookingSlot.setStatus("BOOKED");
-            bookingSlotRepository.save(bookingSlot);
+            String slotStatus = "BOOKED";
+            if (slotStatus.length() > 50) {
+                slotStatus = slotStatus.substring(0, 50);
+            }
+            bookingSlot.setStatus(slotStatus);
 
             request.setStatus("REJECTED");
         }
@@ -355,6 +398,10 @@ public class BookingService {
                     dto.setCreatedAt(booking.getBookingDate());
                     dto.setPurpose(booking.getPurpose());
                     dto.setPlayers(booking.getNumberOfPlayers());
+                    dto.setCourtNumber(slot.getCourtNumber());
+
+                    // Add duration to history
+                    dto.setDurationHours(slot.getDurationHours());
 
                     return dto;
                 })

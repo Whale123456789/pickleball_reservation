@@ -1,4 +1,3 @@
-// BookingResponseDto.java
 package com.pickleball_backend.pickleball.dto;
 
 import lombok.Data;
@@ -17,4 +16,6 @@ public class BookingResponseDto {
     private String bookingStatus;
     private String purpose;
     private Integer numberOfPlayers;
+    private Integer courtNumber;
+    private Integer durationHours;
 }

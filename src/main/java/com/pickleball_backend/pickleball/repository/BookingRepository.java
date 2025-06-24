@@ -18,4 +18,10 @@ public interface BookingRepository extends JpaRepository<Booking, Integer> {
     Optional<Booking> findByIdWithRelations(@Param("id") Integer id);
 
     List<Booking> findByMemberId(Integer memberId);
+
+    @Query("SELECT b FROM Booking b " +
+            "JOIN b.slot s " +
+            "WHERE s.courtId = :courtId " +
+            "AND b.status NOT IN ('CANCELLED', 'COMPLETED', 'CANCELLED_DUE_TO_COURT_DELETION')")
+    List<Booking> findActiveBookingsByCourtId(@Param("courtId") Integer courtId);
 }

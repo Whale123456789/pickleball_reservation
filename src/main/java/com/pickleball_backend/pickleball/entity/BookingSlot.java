@@ -25,7 +25,7 @@ public class BookingSlot {
     @Column(nullable = false)
     private LocalDateTime timestamp = LocalDateTime.now();
 
-    @Column(nullable = false, length = 20)
+    @Column(nullable = false, length = 50)
     private String status; // BOOKED, CANCELLED, COMPLETED
 
 }

@@ -11,4 +11,6 @@ public class SlotDto {
     private LocalTime startTime;
     private LocalTime endTime;
     private boolean isAvailable;
+    private Integer courtNumber;
+    private Integer durationHours;
 }

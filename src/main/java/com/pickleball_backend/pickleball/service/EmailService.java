@@ -10,6 +10,7 @@ import org.springframework.stereotype.Service;
 import lombok.extern.slf4j.Slf4j;
 
 import java.time.Duration;
+import java.time.LocalDate;
 import java.time.LocalTime;
 
 @Service
@@ -156,4 +157,50 @@ public class EmailService {
         }
     }
 
+    public void sendCourtDeletionNotification(
+            String email,
+            String courtName,
+            LocalDate bookingDate,
+            LocalTime bookingTime,
+            double refundAmount
+    ) {
+        log.info("Attempting to send court deletion notification to: {}", email);
+        log.info("Court: {}, Date: {}, Time: {}, Refund: {}",
+                courtName, bookingDate, bookingTime, refundAmount);
+
+        if (email == null) {
+            log.error("Missing email for court deletion notification");
+            return;
+        }
+
+        String subject = "Important: Court Deletion Notification";
+        String content = String.format(
+                "Dear valued member,\n\n" +
+                        "We regret to inform you that the court '%s' has been permanently removed from our system.\n\n" +
+                        "This affects your booking on %s at %s.\n\n" +
+                        "We have processed a full refund of $%.2f for this booking, which should appear in your account within 3-5 business days.\n\n" +
+                        "We sincerely apologize for any inconvenience this may cause. As a gesture of goodwill, we've added 200 loyalty points to your account.\n\n" +
+                        "You can use these points to book other courts in our facility.\n\n" +
+                        "Thank you for your understanding,\n" +
+                        "The Pickleball Management Team",
+                courtName,
+                bookingDate,
+                bookingTime,
+                refundAmount
+        );
+
+        SimpleMailMessage message = new SimpleMailMessage();
+        message.setTo(email);
+        message.setSubject(subject);
+        message.setText(content);
+
+        try {
+            javaMailSender.send(message);
+            log.info("Email sent successfully to: {}", email);
+        } catch (MailException e) {
+            log.error("Failed to send court deletion notification to {}: {}", email, e.getMessage());
+            log.error("Full exception: ", e); // Add full stack trace
+        }
+    }
 }
+

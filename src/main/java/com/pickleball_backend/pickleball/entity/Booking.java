@@ -19,14 +19,14 @@ public class Booking {
     @Column(name = "total_amount", nullable = false, columnDefinition = "double(5,2)")
     private double totalAmount;
 
-    @Column( length = 10)
+    @Column( length = 50)
     private String status;
 
     @ManyToOne(fetch = FetchType.LAZY)
     @JoinColumn(name = "member_id", nullable = false, referencedColumnName = "user_id")
     private Member member;
 
-    @ManyToOne(fetch = FetchType.LAZY)
+    @ManyToOne(fetch = FetchType.EAGER)
     @JoinColumn(name = "slot_id", nullable = false)
     private Slot slot;
 

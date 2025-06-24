@@ -17,4 +17,6 @@ public class BookingHistoryDto {
     private LocalDate createdAt;
     private String purpose;
     private Integer players;
+    private Integer courtNumber;
+    private Integer durationHours;
 }

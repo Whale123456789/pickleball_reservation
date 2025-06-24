@@ -33,4 +33,10 @@ public class Slot {
 
     @Column(name = "status")
     private String status;
+
+    @Column(name = "court_number")
+    private Integer courtNumber;
+
+    @Column(name = "duration_hours", nullable = false)
+    private Integer durationHours = 1;
 }

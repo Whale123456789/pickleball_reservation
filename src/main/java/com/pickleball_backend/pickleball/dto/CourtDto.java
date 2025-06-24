@@ -15,4 +15,5 @@ public class CourtDto {
     private Double dailyPrice;
     private String peakStartTime;
     private String peakEndTime;
+    private Integer numberOfCourts = 1;
 }

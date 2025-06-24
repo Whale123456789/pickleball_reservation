@@ -86,6 +86,7 @@ public class SecurityConfig {
                         .requestMatchers(HttpMethod.GET, "/api/admin/tiers").hasAuthority("ROLE_ADMIN")
                         .requestMatchers(HttpMethod.GET, "/api/admin/slots").hasAuthority("ROLE_ADMIN")
                         .requestMatchers(HttpMethod.GET, "/api/admin/cancellation-requests/pending").hasAuthority("ROLE_ADMIN")
+                        .requestMatchers(HttpMethod.PUT, "/api/admin/cancellation-requests/*/process").hasAuthority("ROLE_ADMIN")
                         .requestMatchers(HttpMethod.PUT, "/api/admin/cancellation-requests/**").hasAuthority("ROLE_ADMIN")
                         .requestMatchers(HttpMethod.GET, "/api/admin/dashboard/**").hasAuthority("ROLE_ADMIN")
                         .requestMatchers("/api/admin/**").hasAuthority("ROLE_ADMIN")

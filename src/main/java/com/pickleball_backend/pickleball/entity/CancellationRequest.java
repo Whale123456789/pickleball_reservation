@@ -22,6 +22,6 @@ public class CancellationRequest {
     @Column(name = "request_date", nullable = false)
     private LocalDate requestDate;
 
-    @Column(nullable = false, length = 20)
+    @Column(nullable = false, length = 50)
     private String status; // PENDING, APPROVED, REJECTED
 }

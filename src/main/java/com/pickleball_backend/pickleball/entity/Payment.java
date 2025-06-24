@@ -17,4 +17,7 @@ public class Payment {
 
     @Column(name = "payment_date", nullable = false)
     private LocalDate paymentDate;
+
+    @Column(name = "status", length = 50)
+    private String status = "COMPLETED";
 }

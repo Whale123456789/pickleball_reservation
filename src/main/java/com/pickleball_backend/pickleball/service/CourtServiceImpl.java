@@ -3,11 +3,12 @@ package com.pickleball_backend.pickleball.service;
 import com.pickleball_backend.pickleball.dto.CourtDto;
 import com.pickleball_backend.pickleball.dto.CourtPricingDto;
 import com.pickleball_backend.pickleball.dto.SlotDto;
-import com.pickleball_backend.pickleball.entity.Court;
+import com.pickleball_backend.pickleball.entity.*;
 import com.pickleball_backend.pickleball.exception.ValidationException;
-import com.pickleball_backend.pickleball.repository.CourtRepository;
-import com.pickleball_backend.pickleball.repository.SlotRepository;
+import com.pickleball_backend.pickleball.repository.*;
 import lombok.RequiredArgsConstructor;
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
@@ -22,8 +23,15 @@ import java.util.stream.Collectors;
 @Service
 @RequiredArgsConstructor
 public class CourtServiceImpl implements CourtService {
+    private static final Logger log = LoggerFactory.getLogger(CourtServiceImpl.class);
     private final CourtRepository courtRepository;
     private final SlotService slotService;
+    private final BookingRepository bookingRepository;
+    private final MemberRepository memberRepository;
+    private final SlotRepository slotRepository;
+    private final EmailService emailService;
+    private final PaymentRepository paymentRepository;
+    private final BookingSlotRepository bookingSlotRepository;
 
     @Override
     public Court createCourt(CourtDto courtDto) {
@@ -31,20 +39,20 @@ public class CourtServiceImpl implements CourtService {
             throw new IllegalArgumentException("Court with the same name and location already exists");
         }
 
-        Court court = saveOrUpdateCourt(new Court(), courtDto);
-        generateSlotsForNewCourt(court);
-        return court;
+        Court mainCourt = saveOrUpdateCourt(new Court(), courtDto);
+        mainCourt.setNumberOfCourts(courtDto.getNumberOfCourts());
+        courtRepository.save(mainCourt);
+
+        generateSlotsForNewCourt(mainCourt, courtDto.getNumberOfCourts());
+
+        return mainCourt;
     }
 
-    private void generateSlotsForNewCourt(Court court) {
+    private void generateSlotsForNewCourt(Court court, int numberOfCourts) {
         try {
             if (court.getOpeningTime() == null || court.getClosingTime() == null) {
                 throw new ValidationException("Court operating hours not defined");
             }
-
-            List<SlotDto> slots = new ArrayList<>();
-            LocalDate start = LocalDate.now();
-            LocalDate end = start.plusMonths(3);
 
             LocalTime opening = LocalTime.parse(court.getOpeningTime());
             LocalTime closing = LocalTime.parse(court.getClosingTime());
@@ -54,31 +62,43 @@ public class CourtServiceImpl implements CourtService {
             }
 
             Set<DayOfWeek> operatingDaySet = parseOperatingDays(court.getOperatingDays());
+            LocalDate start = LocalDate.now();
+            LocalDate end = start.plusMonths(3);
 
-            for (LocalDate date = start; date.isBefore(end); date = date.plusDays(1)) {
-                if (!operatingDaySet.isEmpty() && !operatingDaySet.contains(date.getDayOfWeek())) {
-                    continue;
-                }
+            for (int courtNumber = 1; courtNumber <= numberOfCourts; courtNumber++) {
+                List<SlotDto> slots = new ArrayList<>();
 
-                LocalTime slotStart = opening;
-                while (slotStart.isBefore(closing)) {
-                    SlotDto slot = new SlotDto();
-                    slot.setCourtId(court.getId());
-                    slot.setDate(date);
-                    slot.setStartTime(slotStart);
-
-                    LocalTime slotEnd = slotStart.plusHours(1);
-                    if (slotEnd.isAfter(closing)) {
-                        slotEnd = closing;
+                for (LocalDate date = start; date.isBefore(end); date = date.plusDays(1)) {
+                    if (!operatingDaySet.isEmpty() && !operatingDaySet.contains(date.getDayOfWeek())) {
+                        continue;
                     }
+                    LocalTime slotStart = opening;
 
-                    slot.setEndTime(slotEnd);
-                    slot.setAvailable(true);
-                    slots.add(slot);
-                    slotStart = slotEnd;
+                    while (slotStart.isBefore(closing)) {
+                        // Generate slots for 1, 2, and 3 hours
+                        for (int hours : Arrays.asList(1, 2, 3)) {
+                            LocalTime slotEnd = slotStart.plusHours(hours);
+
+                            if (slotEnd.isAfter(closing)) {
+                                continue; // Skip if exceeds closing time
+                            }
+
+                            SlotDto slot = new SlotDto();
+                            slot.setCourtId(court.getId());
+                            slot.setCourtNumber(courtNumber);
+                            slot.setDate(date);
+                            slot.setStartTime(slotStart);
+                            slot.setEndTime(slotEnd);
+                            slot.setAvailable(true);
+                            slot.setDurationHours(hours); // CRITICAL: Set duration
+
+                            slots.add(slot);
+                        }
+                        slotStart = slotStart.plusHours(1); // Move to next hour
+                    }
                 }
+                slotService.createSlots(slots);
             }
-            slotService.createSlots(slots);
         } catch (DateTimeParseException e) {
             throw new ValidationException("Invalid time format: " + e.getMessage());
         }
@@ -166,21 +186,66 @@ public class CourtServiceImpl implements CourtService {
         Court court = courtRepository.findById(id)
                 .orElseThrow(() -> new IllegalArgumentException("Court not found with id: " + id));
 
-        // Handle null isArchived case
         if (court.getIsArchived() != null && court.getIsArchived()) {
             throw new IllegalStateException("Court already deleted");
         }
 
-        if (hasActiveBookings(id)) {
-            throw new IllegalStateException("Cannot delete court with active bookings");
+        List<Booking> activeBookings = bookingRepository.findActiveBookingsByCourtId(id);
+
+        if (!activeBookings.isEmpty()) {
+            for (Booking booking : activeBookings) {
+                try {
+                    refundBooking(booking);
+                    Slot slot = booking.getSlot();
+                    emailService.sendCourtDeletionNotification(
+                            booking.getMember().getUser().getEmail(),
+                            court.getName(),
+                            slot.getDate(),
+                            slot.getStartTime(),
+                            booking.getTotalAmount()
+                    );
+                    updateBookingStatus(booking);
+
+                    addCompensationPoints(booking.getMember());
+                } catch (Exception e) {
+                    log.error("Error processing booking {} during court deletion: {}", booking.getId(), e.getMessage());
+                }
+            }
         }
 
+        // 軟刪除球場
         courtRepository.softDeleteCourt(id, LocalDateTime.now());
+        log.info("Court {} has been soft deleted", id);
     }
 
-    private boolean hasActiveBookings(Integer courtId) {
-        // Temporary implementation
-        return false;
+    private void refundBooking(Booking booking) {
+        log.info("Processing refund for booking ID: {}, Amount: ${}",
+                booking.getId(), booking.getTotalAmount());
+
+        Payment payment = booking.getPayment();
+        payment.setStatus("REFUNDED");
+        paymentRepository.save(payment);
+
+        Slot slot = booking.getSlot();
+        slot.setAvailable(true);
+        slotRepository.save(slot);
+
+
+        BookingSlot bookingSlot = booking.getBookingSlot();
+        bookingSlot.setStatus("CANCELLED");
+        bookingSlotRepository.save(bookingSlot);
+    }
+
+    private void updateBookingStatus(Booking booking) {
+        booking.setStatus("CANCELLED_DUE_TO_COURT_DELETION");
+        bookingRepository.save(booking);
+    }
+
+    private void addCompensationPoints(Member member) {
+        int currentPoints = member.getPointBalance();
+        member.setPointBalance(currentPoints + 200); // 添加200積分作為補償
+        memberRepository.save(member);
+        log.info("Added 200 compensation points to member ID: {}", member.getId());
     }
 
     @Override
@@ -241,8 +306,4 @@ public class CourtServiceImpl implements CourtService {
                 )
                 .orElse(null);
     }
-
-
-
-
 }

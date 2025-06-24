@@ -38,11 +38,14 @@ public class Court {
     private Double offPeakHourlyPrice;
 
     @Column(name = "daily_price")
-    private Double dailyPrice;  // Daily rate remains
+    private Double dailyPrice;
 
     @Column(name = "peak_start_time")
-    private String peakStartTime;  // HH:mm format
+    private String peakStartTime;
 
     @Column(name = "peak_end_time")
-    private String peakEndTime;    // HH:mm format
+    private String peakEndTime;
+
+    @Column(name = "number_of_courts")
+    private Integer numberOfCourts = 1;
 }
