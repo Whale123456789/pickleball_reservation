@@ -2,6 +2,7 @@ package com.pickleball_backend.pickleball.service;
 
 import com.pickleball_backend.pickleball.entity.Booking;
 import com.pickleball_backend.pickleball.entity.Court;
+import com.pickleball_backend.pickleball.entity.Payment;
 import com.pickleball_backend.pickleball.entity.Slot;
 import org.springframework.mail.MailException;
 import org.springframework.mail.SimpleMailMessage;
@@ -201,6 +202,27 @@ public class EmailService {
             log.error("Failed to send court deletion notification to {}: {}", email, e.getMessage());
             log.error("Full exception: ", e); // Add full stack trace
         }
+    }
+
+    public void sendPaymentReceipt(String email, Payment payment) {
+        SimpleMailMessage message = new SimpleMailMessage();
+        message.setTo(email);
+        message.setSubject("Payment Receipt #" + payment.getId());
+
+        String content = String.format(
+                "Payment Confirmation\n\n" +
+                        "Amount: $%.2f\n" +
+                        "Date: %s\n" +
+                        "Method: %s\n" +
+                        "Transaction ID: %d",
+                payment.getAmount(),
+                payment.getPaymentDate(),
+                payment.getPaymentMethod(),
+                payment.getId()
+        );
+
+        message.setText(content);
+        javaMailSender.send(message);
     }
 }
 

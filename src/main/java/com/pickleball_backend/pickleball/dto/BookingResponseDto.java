@@ -18,4 +18,6 @@ public class BookingResponseDto {
     private Integer numberOfPlayers;
     private Integer courtNumber;
     private Integer durationHours;
+    private String paymentMethod;
+    private String paymentStatus;
 }

@@ -22,8 +22,9 @@ public class MemberService {
     private final MembershipTierRepository tierRepository;
     private final UserAccountRepository userAccountRepository;
     private final VoucherRepository voucherRepository;
+    private final WalletRepository walletRepository;
     private final EmailService emailService;
-    private final TierService tierService; // Added dependency
+    private final TierService tierService;
 
     public MemberDashboardDto getMemberDashboard() {
         String username = SecurityContextHolder.getContext().getAuthentication().getName();
@@ -198,5 +199,13 @@ public class MemberService {
                         v.getExpiryDate()
                 ))
                 .collect(Collectors.toList());
+    }
+
+    @Transactional
+    public void initializeWallet(Integer memberId) {
+        Wallet wallet = new Wallet();
+        wallet.setBalance(100.00); // Initial balance
+        wallet.setMember(memberRepository.findById(memberId).orElseThrow());
+        walletRepository.save(wallet);
     }
 }

@@ -20,4 +20,7 @@ public class Payment {
 
     @Column(name = "status", length = 50)
     private String status = "COMPLETED";
+
+    @Column(name = "payment_method", length = 50)
+    private String paymentMethod;
 }

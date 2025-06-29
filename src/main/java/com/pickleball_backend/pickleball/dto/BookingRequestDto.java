@@ -8,4 +8,7 @@ public class BookingRequestDto {
     private String purpose;
     private Integer numberOfPlayers;
     private Integer durationHours;
+    private boolean useWallet;
+    private String paymentMethod;
+    private String paymentStatus;
 }

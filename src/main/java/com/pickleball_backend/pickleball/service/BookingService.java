@@ -36,6 +36,7 @@ public class BookingService {
     private final CancellationRequestRepository cancellationRequestRepository;
     private final BookingSlotRepository bookingSlotRepository;
     private final UserRepository userRepository;
+    private final WalletRepository walletRepository;
     private static final Logger log = LoggerFactory.getLogger(BookingService.class);
 
     private static final String CANCELLED_STATUS = "CANCELLED";
@@ -73,10 +74,32 @@ public class BookingService {
 
         double amount = calculateBookingAmount(court, slot, request.getDurationHours());
 
+
         // 7. Create payment
         Payment payment = new Payment();
         payment.setAmount(amount);
         payment.setPaymentDate(LocalDate.now());
+        payment = paymentRepository.save(payment);
+
+        if (request.isUseWallet()) {
+            // Validate wallet balance
+            Wallet wallet = getOrCreateWallet(member);
+
+            if (wallet.getBalance() < amount) {
+                throw new ValidationException("Insufficient wallet balance");
+            }
+
+            // Deduct from wallet
+            wallet.setBalance(wallet.getBalance() - amount);
+            walletRepository.save(wallet);
+
+            payment.setPaymentMethod("WALLET");
+            payment.setStatus("COMPLETED");
+        } else {
+            payment.setPaymentMethod("OTHER");
+            payment.setStatus("PENDING"); // Handle external payment later
+        }
+
         payment = paymentRepository.save(payment);
 
         // 8. Create booking
@@ -171,6 +194,15 @@ public class BookingService {
         response.setPurpose(booking.getPurpose());
         response.setNumberOfPlayers(booking.getNumberOfPlayers());
         response.setCourtNumber(slot.getCourtNumber());
+
+        if (booking.getPayment() != null) {
+            response.setPaymentMethod(booking.getPayment().getPaymentMethod());
+            response.setPaymentStatus(booking.getPayment().getStatus());
+        } else {
+            response.setPaymentMethod("UNKNOWN");
+            response.setPaymentStatus("UNKNOWN");
+        }
+
         return response;
     }
 
@@ -406,5 +438,15 @@ public class BookingService {
                     return dto;
                 })
                 .collect(Collectors.toList());
+    }
+
+    private Wallet getOrCreateWallet(Member member) {
+        return walletRepository.findByMemberId(member.getId())
+                .orElseGet(() -> {
+                    Wallet newWallet = new Wallet();
+                    newWallet.setMember(member);
+                    newWallet.setBalance(0.00);
+                    return walletRepository.save(newWallet);
+                });
     }
 }

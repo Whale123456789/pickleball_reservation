@@ -27,7 +27,7 @@ public class UserServiceImpl implements UserService {
     private final EmailService emailService;
     private final MemberRepository memberRepository;
     private final MembershipTierRepository membershipTierRepository; // Correct repository
-    private final BookingRepository bookingRepository;
+    private final WalletRepository walletRepository;
     private final FeedbackRepository feedbackRepository;
 
     @Override
@@ -189,6 +189,19 @@ public class UserServiceImpl implements UserService {
         }
     }
 
+    private void assignDefaultWallet(User user) {
+        Member member = user.getMember();
+        if (member != null) {
+            // Check if wallet already exists
+            if (walletRepository.findByMemberId(member.getId()).isEmpty()) {
+                Wallet wallet = new Wallet();
+                wallet.setMember(member);
+                wallet.setBalance(100.00);
+                walletRepository.save(wallet);
+                log.info("Created wallet for member: {}", member.getId());
+            }
+        }
+    }
 
 
 }

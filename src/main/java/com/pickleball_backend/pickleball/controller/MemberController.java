@@ -2,6 +2,14 @@ package com.pickleball_backend.pickleball.controller;
 
 import com.pickleball_backend.pickleball.dto.*;
 import com.pickleball_backend.pickleball.entity.Court;
+import com.pickleball_backend.pickleball.entity.Member;
+import com.pickleball_backend.pickleball.entity.UserAccount;
+import com.pickleball_backend.pickleball.entity.Wallet;
+import com.pickleball_backend.pickleball.exception.ResourceNotFoundException;
+import com.pickleball_backend.pickleball.exception.ValidationException;
+import com.pickleball_backend.pickleball.repository.MemberRepository;
+import com.pickleball_backend.pickleball.repository.UserAccountRepository;
+import com.pickleball_backend.pickleball.repository.WalletRepository;
 import com.pickleball_backend.pickleball.service.BookingService;
 import com.pickleball_backend.pickleball.service.CourtService;
 import com.pickleball_backend.pickleball.service.MemberService;
@@ -11,6 +19,7 @@ import org.springframework.http.HttpStatus;
 import org.springframework.http.ResponseEntity;
 import org.springframework.security.access.prepost.PreAuthorize;
 import org.springframework.security.core.Authentication;
+import org.springframework.security.core.context.SecurityContextHolder;
 import org.springframework.web.bind.annotation.*;
 
 import java.time.LocalDate;
@@ -24,6 +33,9 @@ public class MemberController {
     private final MemberService memberService;
     private final BookingService bookingService;
     private final CourtService courtService;
+    private final WalletRepository walletRepository;
+    private final UserAccountRepository userAccountRepository;
+    private final MemberRepository memberRepository;
 
     @GetMapping("/dashboard")
     @PreAuthorize("hasRole('USER')")
@@ -105,5 +117,27 @@ public class MemberController {
         } catch (Exception e) {
             return ResponseEntity.status(HttpStatus.INTERNAL_SERVER_ERROR).body("Error retrieving court");
         }
+    }
+
+    @PostMapping("/wallet/init")
+    @PreAuthorize("hasRole('USER')")
+    public ResponseEntity<String> initializeWallet() {
+        String username = SecurityContextHolder.getContext().getAuthentication().getName();
+        UserAccount account = userAccountRepository.findByUsername(username)
+                .orElseThrow(() -> new ResourceNotFoundException("User not found"));
+
+        Member member = memberRepository.findByUserId(account.getUser().getId());
+
+        walletRepository.findByMemberId(member.getId()).ifPresentOrElse(
+                wallet -> { throw new ValidationException("Wallet already exists"); },
+                () -> {
+                    Wallet newWallet = new Wallet();
+                    newWallet.setMember(member);
+                    newWallet.setBalance(0.00);
+                    walletRepository.save(newWallet);
+                }
+        );
+
+        return ResponseEntity.ok("Wallet initialized successfully");
     }
 }
